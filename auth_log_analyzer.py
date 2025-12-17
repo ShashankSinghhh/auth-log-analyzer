@@ -1,58 +1,42 @@
-# Auth Log Analyzer - Day 7
-# Focus: Debugging why detections fail
+# Auth Log Analyzer - Day 8
+# Time-window correlation for brute-force detection
+
+from datetime import datetime
 
 log_file = "/var/log/auth.log"
 
-# Dictionary to count severity events
-events = {
-    "low": 0,
-    "medium": 0,
-    "high": 0
-}
+failed_attempts = {}
 
-# Dictionary to track what patterns we actually saw
-patterns_seen = {
-    "sudo": 0,
-    "sshd": 0,
-    "failed_auth": 0
-}
-
-total_lines = 0
+TIME_WINDOW_MINUTES = 5
+THRESHOLD = 3
 
 with open(log_file, "r") as file:
     for line in file:
-        total_lines += 1
+        if "authentication failure" in line or "Failed password" in line:
+            parts = line.split()
 
-        if "sudo" in line:
-            patterns_seen["sudo"] += 1
+            timestamp_str = " ".join(parts[0:3])
+            timestamp = datetime.strptime(timestamp_str, "%b %d %H:%M:%S")
 
-        if "sshd" in line:
-            patterns_seen["sshd"] += 1
+            if "user=" in line:
+                user = line.split("user=")[1].split()[0]
+            else:
+                user = "unknown"
 
-        if "authentication failure" in line or "Failed password" in line or "Failed publickey" in line:
-            patterns_seen["failed_auth"] += 1
+            if user not in failed_attempts:
+                failed_attempts[user] = []
 
-        if "sudo" in line and "authentication failure" in line:
-            events["low"] += 1
+            failed_attempts[user].append(timestamp)
 
-        elif "sshd" in line and ("Invalid user" in line or "authentication failure" in line):
-            events["medium"] += 1
+print("\n=== TIME WINDOW ANALYSIS ===")
 
-        elif "Failed password" in line or "Failed publickey" in line:
-            events["high"] += 1
+for user, times in failed_attempts.items():
+    times.sort()
 
-print("\n=== DEBUG SUMMARY ===")
-print(f"Total log lines read: {total_lines}")
+    for i in range(len(times)):
+        window = [t for t in times if (t - times[i]).seconds <= TIME_WINDOW_MINUTES * 60]
 
-print("\nPatterns observed:")
-for pattern, count in patterns_seen.items():
-    print(f"{pattern.upper()} → {count}")
-
-print("\nSOC Event Summary:")
-print(f"LOW → {events['low']}")
-print(f"MEDIUM → {events['medium']}")
-print(f"HIGH → {events['high']}")
-
-if events["high"] == 0 and patterns_seen["failed_auth"] == 0:
-    print("\nNOTE: No authentication failures detected.")
-    print("Reason: System likely uses key-based authentication or no attacks occurred.")
+        if len(window) >= THRESHOLD:
+            print(f"ALERT: Possible brute-force on user '{user}'")
+            print(f"Attempts: {len(window)} within {TIME_WINDOW_MINUTES} minutes")
+            break
