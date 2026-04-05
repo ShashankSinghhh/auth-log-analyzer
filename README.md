@@ -11,5 +11,3 @@ This project analyzes Linux authentication logs to identify suspicious login act
 ## Objective
 Understand how SOC analysts detect authentication-based attacks.
 
-## Status
-Day 1 – Project initialized
